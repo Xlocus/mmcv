@@ -111,11 +111,12 @@ class LrUpdaterHook(Hook):
             ]
 
     def before_train_epoch(self, runner):
-        if not self.by_epoch:
-            return
-        if self.warmup_by_epoch:
+        if self.warmup_iters is None:
             epoch_len = len(runner.data_loader)
             self.warmup_iters = self.warmup_epochs * epoch_len
+
+        if not self.by_epoch:
+            return
 
         self.regular_lr = self.get_regular_lr(runner)
         self._set_lr(runner, self.regular_lr)

@@ -271,6 +271,22 @@ class BaseRunner(metaclass=ABCMeta):
         if not inserted:
             self._hooks.insert(0, hook)
 
+    def register_hook_from_cfg(self, hook_cfg):
+        """Register a hook from its cfg.
+
+        Args:
+            hook_cfg (dict): Hook config. It should have at least keys 'type'
+              and 'priority' indicating its type and priority.
+
+        Notes:
+            The specific hook class to register should not use 'type' and
+            'priority' arguments during initialization.
+        """
+        hook_cfg = hook_cfg.copy()
+        priority = hook_cfg.pop('priority', 'NORMAL')
+        hook = mmcv.build_from_cfg(hook_cfg, HOOKS)
+        self.register_hook(hook, priority=priority)
+
     def call_hook(self, fn_name):
         """Call all hooks.
 
@@ -291,10 +307,13 @@ class BaseRunner(metaclass=ABCMeta):
                resume_optimizer=True,
                map_location='default'):
         if map_location == 'default':
-            device_id = torch.cuda.current_device()
-            checkpoint = self.load_checkpoint(
-                checkpoint,
-                map_location=lambda storage, loc: storage.cuda(device_id))
+            if torch.cuda.is_available():
+                device_id = torch.cuda.current_device()
+                checkpoint = self.load_checkpoint(
+                    checkpoint,
+                    map_location=lambda storage, loc: storage.cuda(device_id))
+            else:
+                checkpoint = self.load_checkpoint(checkpoint)
         else:
             checkpoint = self.load_checkpoint(
                 checkpoint, map_location=map_location)
@@ -367,6 +386,8 @@ class BaseRunner(metaclass=ABCMeta):
         self.register_hook(hook)
 
     def register_logger_hooks(self, log_config):
+        if log_config is None:
+            return
         log_interval = log_config['interval']
         for info in log_config['hooks']:
             logger_hook = mmcv.build_from_cfg(
