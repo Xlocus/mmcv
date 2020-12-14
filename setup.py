@@ -1,14 +1,8 @@
 import glob
 import os
 import re
-import setuptools
 from pkg_resources import DistributionNotFound, get_distribution
-from setuptools import dist, find_packages, setup
-
-dist.Distribution().fetch_build_eggs(['Cython', 'numpy>=1.11.1'])
-
-import numpy  # NOQA: E402  # isort:skip
-from Cython.Build import cythonize  # NOQA: E402  # isort:skip
+from setuptools import find_packages, setup
 
 EXT_TYPE = ''
 try:
@@ -19,8 +13,9 @@ try:
     else:
         from torch.utils.cpp_extension import BuildExtension
         EXT_TYPE = 'pytorch'
+    cmd_class = {'build_ext': BuildExtension}
 except ModuleNotFoundError:
-    from Cython.Distutils import build_ext as BuildExtension
+    cmd_class = {}
     print('Skip building ext ops due to the absence of torch.')
 
 
@@ -43,7 +38,7 @@ def get_version():
     return locals()['__version__']
 
 
-def parse_requirements(fname='requirements.txt', with_version=True):
+def parse_requirements(fname='requirements/runtime.txt', with_version=True):
     """Parse the package dependencies listed in a requirements file but strips
     specific versioning information.
 
@@ -119,26 +114,25 @@ def parse_requirements(fname='requirements.txt', with_version=True):
     return packages
 
 
-# If first not installed install second package
-CHOOSE_INSTALL_REQUIRES = [('opencv-python-headless>=3', 'opencv-python>=3')]
-
 install_requires = parse_requirements()
-for main, secondary in CHOOSE_INSTALL_REQUIRES:
-    install_requires.append(choose_requirement(main, secondary))
+
+try:
+    # OpenCV installed via conda.
+    import cv2  # NOQA: F401
+    major, minor, *rest = cv2.__version__.split('.')
+    if int(major) < 3:
+        raise RuntimeError(
+            f'OpenCV >=3 is required but {cv2.__version__} is installed')
+except ImportError:
+    # If first not installed install second package
+    CHOOSE_INSTALL_REQUIRES = [('opencv-python-headless>=3',
+                                'opencv-python>=3')]
+    for main, secondary in CHOOSE_INSTALL_REQUIRES:
+        install_requires.append(choose_requirement(main, secondary))
 
 
 def get_extensions():
     extensions = []
-
-    ext_flow = setuptools.Extension(
-        name='mmcv._flow_warp_ext',
-        sources=[
-            './mmcv/video/optflow_warp/flow_warp.cpp',
-            './mmcv/video/optflow_warp/flow_warp_module.pyx'
-        ],
-        include_dirs=[numpy.get_include()],
-        language='c++')
-    extensions.extend(cythonize(ext_flow))
 
     if os.getenv('MMCV_WITH_OPS', '0') == '0':
         return extensions
@@ -215,5 +209,5 @@ setup(
     tests_require=['pytest'],
     install_requires=install_requires,
     ext_modules=get_extensions(),
-    cmdclass={'build_ext': BuildExtension},
+    cmdclass=cmd_class,
     zip_safe=False)
