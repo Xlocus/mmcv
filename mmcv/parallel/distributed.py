@@ -3,6 +3,7 @@ import torch
 from torch.nn.parallel.distributed import (DistributedDataParallel,
                                            _find_tensors)
 
+from mmcv import print_log
 from mmcv.utils import TORCH_VERSION
 from .scatter_gather import scatter_kwargs
 
@@ -17,6 +18,11 @@ class MMDistributedDataParallel(DistributedDataParallel):
     - It implement two APIs ``train_step()`` and ``val_step()``.
     """
 
+    def to_kwargs(self, inputs, kwargs, device_id):
+        # Use `self.to_kwargs` instead of `self.scatter` in pytorch1.8
+        # to move all tensors to device_id
+        return scatter_kwargs(inputs, kwargs, [device_id], dim=self.dim)
+
     def scatter(self, inputs, kwargs, device_ids):
         return scatter_kwargs(inputs, kwargs, device_ids, dim=self.dim)
 
@@ -28,6 +34,15 @@ class MMDistributedDataParallel(DistributedDataParallel):
         ``self.module.forward()`` with ``self.module.train_step()``.
         It is compatible with PyTorch 1.1 - 1.5.
         """
+
+        # In PyTorch >= 1.7, ``reducer._rebuild_buckets()`` is moved from the
+        # end of backward to the beginning of forward.
+        if (TORCH_VERSION >= '1.7' and 'parrots'
+                not in TORCH_VERSION) and self.reducer._rebuild_buckets():
+            print_log(
+                'Reducer buckets have been rebuilt in this iteration.',
+                logger='mmcv')
+
         if getattr(self, 'require_forward_param_sync', True):
             self._sync_params()
         if self.device_ids:
@@ -60,6 +75,14 @@ class MMDistributedDataParallel(DistributedDataParallel):
         ``self.module.forward()`` with ``self.module.val_step()``.
         It is compatible with PyTorch 1.1 - 1.5.
         """
+        # In PyTorch >= 1.7, ``reducer._rebuild_buckets()`` is moved from the
+        # end of backward to the beginning of forward.
+        if (TORCH_VERSION >= '1.7' and 'parrots'
+                not in TORCH_VERSION) and self.reducer._rebuild_buckets():
+            print_log(
+                'Reducer buckets have been rebuilt in this iteration.',
+                logger='mmcv')
+
         if getattr(self, 'require_forward_param_sync', True):
             self._sync_params()
         if self.device_ids:

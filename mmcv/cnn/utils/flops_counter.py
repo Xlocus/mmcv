@@ -30,6 +30,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+import mmcv
+
 
 def get_model_complexity_info(model,
                               input_shape,
@@ -54,7 +56,8 @@ def get_model_complexity_info(model,
             ``nn.AdaptiveMaxPool3d``, ``nn.AdaptiveAvgPool1d``,
             ``nn.AdaptiveAvgPool2d``, ``nn.AdaptiveAvgPool3d``.
         - BatchNorms: ``nn.BatchNorm1d``, ``nn.BatchNorm2d``,
-            ``nn.BatchNorm3d``.
+            ``nn.BatchNorm3d``, ``nn.GroupNorm``, ``nn.InstanceNorm1d``,
+            ``InstanceNorm2d``, ``InstanceNorm3d``, ``nn.LayerNorm``.
         - Linear: ``nn.Linear``.
         - Deconvolution: ``nn.ConvTranspose2d``.
         - Upsample: ``nn.Upsample``.
@@ -234,7 +237,7 @@ def print_model_with_flops(model,
 
         >>> model = ExampleModel()
         >>> x = (3, 16, 16)
-        to print the complexity inforamtion state for each layer, you can use
+        to print the complexity information state for each layer, you can use
         >>> get_model_complexity_info(model, x)
         or directly use
         >>> print_model_with_flops(model, 4579784.0, 37361)
@@ -365,7 +368,7 @@ def start_flops_count(self):
 
             else:
                 handle = module.register_forward_hook(
-                    MODULES_MAPPING[type(module)])
+                    get_modules_mapping()[type(module)])
 
             module.__flops_handle__ = handle
 
@@ -424,11 +427,12 @@ def pool_flops_counter_hook(module, input, output):
     module.__flops__ += int(np.prod(input.shape))
 
 
-def bn_flops_counter_hook(module, input, output):
+def norm_flops_counter_hook(module, input, output):
     input = input[0]
 
     batch_flops = np.prod(input.shape)
-    if module.affine:
+    if (getattr(module, 'affine', False)
+            or getattr(module, 'elementwise_affine', False)):
         batch_flops *= 2
     module.__flops__ += int(batch_flops)
 
@@ -534,7 +538,7 @@ def add_flops_counter_variable_or_reset(module):
 
 
 def is_supported_instance(module):
-    if type(module) in MODULES_MAPPING:
+    if type(module) in get_modules_mapping():
         return True
     return False
 
@@ -546,38 +550,50 @@ def remove_flops_counter_hook_function(module):
             del module.__flops_handle__
 
 
-MODULES_MAPPING = {
-    # convolutions
-    nn.Conv1d: conv_flops_counter_hook,
-    nn.Conv2d: conv_flops_counter_hook,
-    nn.Conv3d: conv_flops_counter_hook,
-    # activations
-    nn.ReLU: relu_flops_counter_hook,
-    nn.PReLU: relu_flops_counter_hook,
-    nn.ELU: relu_flops_counter_hook,
-    nn.LeakyReLU: relu_flops_counter_hook,
-    nn.ReLU6: relu_flops_counter_hook,
-    # poolings
-    nn.MaxPool1d: pool_flops_counter_hook,
-    nn.AvgPool1d: pool_flops_counter_hook,
-    nn.AvgPool2d: pool_flops_counter_hook,
-    nn.MaxPool2d: pool_flops_counter_hook,
-    nn.MaxPool3d: pool_flops_counter_hook,
-    nn.AvgPool3d: pool_flops_counter_hook,
-    nn.AdaptiveMaxPool1d: pool_flops_counter_hook,
-    nn.AdaptiveAvgPool1d: pool_flops_counter_hook,
-    nn.AdaptiveMaxPool2d: pool_flops_counter_hook,
-    nn.AdaptiveAvgPool2d: pool_flops_counter_hook,
-    nn.AdaptiveMaxPool3d: pool_flops_counter_hook,
-    nn.AdaptiveAvgPool3d: pool_flops_counter_hook,
-    # BNs
-    nn.BatchNorm1d: bn_flops_counter_hook,
-    nn.BatchNorm2d: bn_flops_counter_hook,
-    nn.BatchNorm3d: bn_flops_counter_hook,
-    # FC
-    nn.Linear: linear_flops_counter_hook,
-    # Upscale
-    nn.Upsample: upsample_flops_counter_hook,
-    # Deconvolution
-    nn.ConvTranspose2d: deconv_flops_counter_hook,
-}
+def get_modules_mapping():
+    return {
+        # convolutions
+        nn.Conv1d: conv_flops_counter_hook,
+        nn.Conv2d: conv_flops_counter_hook,
+        mmcv.cnn.bricks.Conv2d: conv_flops_counter_hook,
+        nn.Conv3d: conv_flops_counter_hook,
+        mmcv.cnn.bricks.Conv3d: conv_flops_counter_hook,
+        # activations
+        nn.ReLU: relu_flops_counter_hook,
+        nn.PReLU: relu_flops_counter_hook,
+        nn.ELU: relu_flops_counter_hook,
+        nn.LeakyReLU: relu_flops_counter_hook,
+        nn.ReLU6: relu_flops_counter_hook,
+        # poolings
+        nn.MaxPool1d: pool_flops_counter_hook,
+        nn.AvgPool1d: pool_flops_counter_hook,
+        nn.AvgPool2d: pool_flops_counter_hook,
+        nn.MaxPool2d: pool_flops_counter_hook,
+        mmcv.cnn.bricks.MaxPool2d: pool_flops_counter_hook,
+        nn.MaxPool3d: pool_flops_counter_hook,
+        mmcv.cnn.bricks.MaxPool3d: pool_flops_counter_hook,
+        nn.AvgPool3d: pool_flops_counter_hook,
+        nn.AdaptiveMaxPool1d: pool_flops_counter_hook,
+        nn.AdaptiveAvgPool1d: pool_flops_counter_hook,
+        nn.AdaptiveMaxPool2d: pool_flops_counter_hook,
+        nn.AdaptiveAvgPool2d: pool_flops_counter_hook,
+        nn.AdaptiveMaxPool3d: pool_flops_counter_hook,
+        nn.AdaptiveAvgPool3d: pool_flops_counter_hook,
+        # normalizations
+        nn.BatchNorm1d: norm_flops_counter_hook,
+        nn.BatchNorm2d: norm_flops_counter_hook,
+        nn.BatchNorm3d: norm_flops_counter_hook,
+        nn.GroupNorm: norm_flops_counter_hook,
+        nn.InstanceNorm1d: norm_flops_counter_hook,
+        nn.InstanceNorm2d: norm_flops_counter_hook,
+        nn.InstanceNorm3d: norm_flops_counter_hook,
+        nn.LayerNorm: norm_flops_counter_hook,
+        # FC
+        nn.Linear: linear_flops_counter_hook,
+        mmcv.cnn.bricks.Linear: linear_flops_counter_hook,
+        # Upscale
+        nn.Upsample: upsample_flops_counter_hook,
+        # Deconvolution
+        nn.ConvTranspose2d: deconv_flops_counter_hook,
+        mmcv.cnn.bricks.ConvTranspose2d: deconv_flops_counter_hook,
+    }

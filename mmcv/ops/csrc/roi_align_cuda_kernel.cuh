@@ -1,11 +1,16 @@
 #ifndef ROI_ALIGN_CUDA_KERNEL_CUH
 #define ROI_ALIGN_CUDA_KERNEL_CUH
 
+#include <float.h>
+#ifdef MMCV_WITH_TRT
+#include "common_cuda_helper.hpp"
+#else  // MMCV_WITH_TRT
 #ifdef MMCV_USE_PARROTS
 #include "parrots_cuda_helper.hpp"
-#else
+#else  // MMCV_USE_PARROTS
 #include "pytorch_cuda_helper.hpp"
-#endif
+#endif  // MMCV_USE_PARROTS
+#endif  // MMCV_WITH_TRT
 
 /*** Forward ***/
 template <typename T>
@@ -49,10 +54,11 @@ __global__ void roi_align_forward_cuda_kernel(
     int roi_bin_grid_h =
         (sampling_ratio > 0)
             ? sampling_ratio
-            : static_cast<int>(ceil(roi_height / pooled_height));
-    int roi_bin_grid_w = (sampling_ratio > 0)
-                             ? sampling_ratio
-                             : static_cast<int>(ceil(roi_width / pooled_width));
+            : static_cast<int>(ceilf(roi_height / pooled_height));
+    int roi_bin_grid_w =
+        (sampling_ratio > 0)
+            ? sampling_ratio
+            : static_cast<int>(ceilf(roi_width / pooled_width));
 
     if (pool_mode == 0) {
       // We do max pooling inside a bin
@@ -163,11 +169,11 @@ __global__ void roi_align_backward_cuda_kernel(
       int roi_bin_grid_h =
           (sampling_ratio > 0)
               ? sampling_ratio
-              : static_cast<int>(ceil(roi_height / pooled_height));
+              : static_cast<int>(ceilf(roi_height / pooled_height));
       int roi_bin_grid_w =
           (sampling_ratio > 0)
               ? sampling_ratio
-              : static_cast<int>(ceil(roi_width / pooled_width));
+              : static_cast<int>(ceilf(roi_width / pooled_width));
 
       // We do average (integral) pooling inside a bin
       const T count = roi_bin_grid_h * roi_bin_grid_w;  // e.g. = 4
